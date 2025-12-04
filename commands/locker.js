@@ -1,45 +1,75 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getLocker } = require('../utils/fortniteAPI');
-const { renderLockerCard } = require('../utils/renderCard');
+import axios from "axios";
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('locker')
-        .setDescription('View your Fortnite locker'),
+export default {
+  data: new SlashCommandBuilder()
+    .setName("locker")
+    .setDescription("View your full Fortnite locker (skins, pickaxes, emotes, gliders, etc)."),
 
-    async execute(interaction) {
-        await interaction.deferReply();
+  async execute(interaction) {
+    await interaction.deferReply();
 
-        try {
-            // Fetch locker data from DB + Epic API
-            const locker = await getLocker(interaction.user.id);
+    try {
+      const userId = interaction.user.id;
 
-            if (!locker) {
-                return interaction.editReply("❌ You are not logged in. Use **/login** first.");
-            }
+      // Request full locker from your backend
+      const lockerRes = await axios.get(
+        `${process.env.SERVER_URL}/locker/fetch`,
+        { params: { userId } }
+      );
 
-            // Render the Rift-style locker card URL
-            const imageURL = await renderLockerCard(locker);
+      const { accountLevel, items } = lockerRes.data;
 
-            const embed = new EmbedBuilder()
-                .setTitle(`${interaction.user.username}'s Locker`)
-                .setColor('#2ECC71')
-                .setDescription(
-                    `**Skins:** ${locker.skins.length}\n` +
-                    `**Backblings:** ${locker.backblings.length}\n` +
-                    `**Pickaxes:** ${locker.pickaxes.length}\n` +
-                    `**Gliders:** ${locker.gliders.length}\n` +
-                    `**Emotes:** ${locker.emotes.length}\n` +
-                    `**Wraps:** ${locker.wraps.length}`
-                )
-                .setImage(imageURL)
-                .setFooter({ text: "Updated from your Epic Games account" });
+      // Format categories
+      const skins = items.skins?.length || 0;
+      const pickaxes = items.pickaxes?.length || 0;
+      const emotes = items.emotes?.length || 0;
+      const gliders = items.gliders?.length || 0;
+      const backblings = items.backblings?.length || 0;
+      const exclusives = items.exclusives?.length || 0;
 
-            return interaction.editReply({ embeds: [embed] });
+      const embed = new EmbedBuilder()
+        .setTitle("🎒 Your Fortnite Locker")
+        .setColor("#00A2FF")
+        .setDescription("Here’s everything linked to your account.")
+        .addFields(
+          { name: "🎭 Skins", value: `${skins}`, inline: true },
+          { name: "🪓 Pickaxes", value: `${pickaxes}`, inline: true },
+          { name: "💃 Emotes", value: `${emotes}`, inline: true },
+          { name: "🪂 Gliders", value: `${gliders}`, inline: true },
+          { name: "🎒 Backblings", value: `${backblings}`, inline: true },
+          { name: "🌟 Exclusives", value: `${exclusives}`, inline: true }
+        )
+        .addFields({
+          name: "🏆 Account Level",
+          value: `${accountLevel}`,
+          inline: false
+        })
+        .setFooter({ text: "Use /logout to remove your login." });
 
-        } catch (err) {
-            console.error(err);
-            return interaction.editReply("❌ Error loading locker.");
+      // Generate preview images for the embed
+      const imgRequest = await axios.get(
+        `${process.env.SERVER_URL}/renderLocker`,
+        {
+          params: {
+            items: items.skins.slice(0, 9).join(",") // first 9 for preview
+          }
         }
+      );
+
+      const previewImages = imgRequest.data.images;
+
+      if (previewImages.length > 0) {
+        embed.setImage(previewImages[0]);
+      }
+
+      await interaction.editReply({ embeds: [embed] });
+
+    } catch (err) {
+      console.error(err?.response?.data || err);
+      return interaction.editReply({
+        content: "❌ Could not fetch your locker. Did you run `/login` first?",
+      });
     }
+  }
 };
