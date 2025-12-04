@@ -1,73 +1,66 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, REST, Routes, Collection } = require("discord.js");
 const express = require("express");
+const { Client, GatewayIntentBits, Collection, REST, Routes } = require("discord.js");
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
-});
-
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 
-// Load commands
-const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+const commandsPath = path.join(__dirname, "commands");
+if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath);
+
+const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
+const commandsForReg = [];
+
 for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  client.commands.set(command.data.name, command);
+  const cmd = require(path.join(commandsPath, file));
+  client.commands.set(cmd.data.name, cmd);
+  commandsForReg.push(cmd.data.toJSON ? cmd.data.toJSON() : cmd.data);
 }
 
-// Register slash commands to Discord
 async function registerCommands() {
+  if (!process.env.DISCORD_TOKEN || !process.env.CLIENT_ID) {
+    console.warn("Skipping registration: DISCORD_TOKEN or CLIENT_ID missing.");
+    return;
+  }
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-  const commands = client.commands.map(cmd => cmd.data.toJSON());
-
   try {
     if (process.env.GUILD_ID) {
-      console.log("⏳ Registering guild commands...");
-      await rest.put(
-        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-        { body: commands }
-      );
-      console.log("✅ Registered commands to guild!");
+      await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: commandsForReg });
+      console.log("Registered guild commands.");
     } else {
-      console.log("⏳ Registering global commands...");
-      await rest.put(
-        Routes.applicationCommands(process.env.CLIENT_ID),
-        { body: commands }
-      );
-      console.log("🌍 Registered global commands!");
+      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandsForReg });
+      console.log("Registered global commands.");
     }
-  } catch (error) {
-    console.error(error);
-  }
+  } catch (e) { console.error("Failed to register commands:", e); }
 }
 
 client.on("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
+  console.log(`Logged in as ${client.user.tag}`);
 });
 
-// Run commands
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
-
+  const cmd = client.commands.get(interaction.commandName);
+  if (!cmd) return;
   try {
-    await command.execute(interaction);
+    await cmd.execute(interaction, { client });
   } catch (err) {
-    console.error(err);
-    await interaction.reply({ content: "❌ Error running command", ephemeral: true });
+    console.error("Command error:", err);
+    if (!interaction.replied) await interaction.reply({ content: "❌ Error occurred", ephemeral: true });
   }
 });
 
-// Express server for Railway
+// Express health endpoint (Render needs at least one web port)
 const app = express();
-app.get("/", (req, res) => res.send("Bot is alive"));
-app.listen(process.env.PORT || 3000, () => {
-  console.log("🌐 Express server running");
-});
+app.get("/", (req, res) => res.send("Fortnite Safe Viewer is running."));
+app.listen(process.env.PORT || 3000, () => console.log("Express listening."));
 
-// Start bot
-registerCommands().then(() => client.login(process.env.DISCORD_TOKEN));
+registerCommands().then(() => {
+  if (!process.env.DISCORD_TOKEN) {
+    console.error("Missing DISCORD_TOKEN in env. Exiting.");
+    process.exit(1);
+  }
+  client.login(process.env.DISCORD_TOKEN);
+});
