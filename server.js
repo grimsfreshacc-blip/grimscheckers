@@ -5,6 +5,9 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 
+// ⭐ ADD THIS IMPORT
+import { renderLockerCard } from "./utils/renderLockerCard.js";
+
 dotenv.config();
 
 const app = express();
@@ -37,9 +40,7 @@ app.post("/auth/create", async (req, res) => {
     if (!code) return res.status(400).json({ error: "Missing authorization code" });
     if (!discordId) return res.status(400).json({ error: "Missing Discord ID" });
 
-    // ------------------------------------------
-    // STEP 1 → Exchange authorization code
-    // ------------------------------------------
+    // Exchange code → Access token
     const tokenRes = await axios.post(
       "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token",
       new URLSearchParams({
@@ -58,9 +59,7 @@ app.post("/auth/create", async (req, res) => {
     const accessToken = tokenRes.data.access_token;
     const accountId = tokenRes.data.account_id;
 
-    // ------------------------------------------
-    // STEP 2 → Generate Device Auth
-    // ------------------------------------------
+    // Create device auth
     const deviceRes = await axios.post(
       "https://account-public-service-prod.ak.epicgames.com/account/api/oauth/deviceAuthorization",
       {},
@@ -73,16 +72,20 @@ app.post("/auth/create", async (req, res) => {
       secret: deviceRes.data.device_secret
     };
 
-    // ------------------------------------------
-    // STEP 3 → Save auth to /data/users
-    // ------------------------------------------
+    // Save to file
     const savePath = path.join(usersDir, `${discordId}.json`);
-
-    fs.writeFileSync(savePath, JSON.stringify({
-      discordId,
-      epic: deviceAuth,
-      locker: []
-    }, null, 2));
+    fs.writeFileSync(
+      savePath,
+      JSON.stringify(
+        {
+          discordId,
+          epic: deviceAuth,
+          locker: []
+        },
+        null,
+        2
+      )
+    );
 
     return res.json({
       success: true,
@@ -90,7 +93,6 @@ app.post("/auth/create", async (req, res) => {
       accountId,
       deviceAuth
     });
-
   } catch (err) {
     console.error(err?.response?.data || err);
     return res.status(500).json({
@@ -102,7 +104,7 @@ app.post("/auth/create", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// GET COSMETIC IMAGE (like Rift /assets)
+// GET COSMETIC IMAGE
 // ----------------------------------------------------
 app.get("/cosmetic/:id.png", (req, res) => {
   const id = req.params.id;
@@ -150,6 +152,25 @@ app.get("/renderLocker", (req, res) => {
   const images = itemList.map(id => `${process.env.SERVER_URL}/cosmetic/${id}.png`);
 
   return res.json({ images });
+});
+
+// ----------------------------------------------------
+// ⭐ NEW: LOCKER CARD GENERATOR (PNG)
+// ----------------------------------------------------
+app.post("/locker/card", async (req, res) => {
+  try {
+    const buffer = await renderLockerCard(req.body);
+
+    res.writeHead(200, {
+      "Content-Type": "image/png",
+      "Content-Length": buffer.length
+    });
+
+    return res.end(buffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to generate card" });
+  }
 });
 
 // ----------------------------------------------------
