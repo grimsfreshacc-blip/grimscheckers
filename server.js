@@ -8,7 +8,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 
 const commandsPath = path.join(__dirname, "commands");
-if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath);
+if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true });
 
 const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
 const commandsForReg = [];
@@ -16,12 +16,13 @@ const commandsForReg = [];
 for (const file of commandFiles) {
   const cmd = require(path.join(commandsPath, file));
   client.commands.set(cmd.data.name, cmd);
+  // some command objects use toJSON (SlashCommandBuilder), handle both
   commandsForReg.push(cmd.data.toJSON ? cmd.data.toJSON() : cmd.data);
 }
 
 async function registerCommands() {
   if (!process.env.DISCORD_TOKEN || !process.env.CLIENT_ID) {
-    console.warn("Skipping registration: DISCORD_TOKEN or CLIENT_ID missing.");
+    console.warn("Skipping command registration: missing DISCORD_TOKEN or CLIENT_ID.");
     return;
   }
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -31,9 +32,11 @@ async function registerCommands() {
       console.log("Registered guild commands.");
     } else {
       await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandsForReg });
-      console.log("Registered global commands.");
+      console.log("Registered global commands (may take up to 1 hour).");
     }
-  } catch (e) { console.error("Failed to register commands:", e); }
+  } catch (e) {
+    console.error("Failed registering commands:", e);
+  }
 }
 
 client.on("ready", () => {
@@ -47,19 +50,19 @@ client.on("interactionCreate", async (interaction) => {
   try {
     await cmd.execute(interaction, { client });
   } catch (err) {
-    console.error("Command error:", err);
-    if (!interaction.replied) await interaction.reply({ content: "❌ Error occurred", ephemeral: true });
+    console.error("Command execution error:", err);
+    if (!interaction.replied) await interaction.reply({ content: "❌ An error occurred.", ephemeral: true });
   }
 });
 
-// Express health endpoint (Render needs at least one web port)
+// Express health
 const app = express();
-app.get("/", (req, res) => res.send("Fortnite Safe Viewer is running."));
+app.get("/", (req, res) => res.send("Fortnite Safe Viewer running."));
 app.listen(process.env.PORT || 3000, () => console.log("Express listening."));
 
 registerCommands().then(() => {
   if (!process.env.DISCORD_TOKEN) {
-    console.error("Missing DISCORD_TOKEN in env. Exiting.");
+    console.error("DISCORD_TOKEN missing in environment. Exiting.");
     process.exit(1);
   }
   client.login(process.env.DISCORD_TOKEN);
