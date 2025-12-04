@@ -1,18 +1,9 @@
-import { createCanvas, loadImage } from "canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import path from "path";
 import { getCosmeticImage } from "./fetchCosmeticImage.js";
 
 /**
  * Generates a locker card PNG showing the user's equipped items.
- * Input example:
- * {
- *   skin: "CID_123",
- *   backbling: "BID_456",
- *   pickaxe: "PID_789",
- *   glider: "GID_000",
- *   emote: "EID_111",
- *   exclusive: ["CID_OG1", "CID_OG2"]
- * }
  */
 export async function renderLockerCard(locker) {
   const WIDTH = 1200;
@@ -36,12 +27,14 @@ export async function renderLockerCard(locker) {
     ctx.font = "28px Sans";
     ctx.fillText(label, x, y);
 
+    // Actual PNG file path or URL
     const imgPath = getCosmeticImage(id);
+
     try {
       const image = await loadImage(imgPath);
       ctx.drawImage(image, x, y + 10, 200, 200);
-    } catch {
-      // drawing default is handled by getCosmeticImage
+    } catch (err) {
+      console.error(`Failed loading image for ${id}:`, err);
     }
   }
 
@@ -72,10 +65,14 @@ export async function renderLockerCard(locker) {
 
     for (const id of locker.exclusive) {
       const imgPath = getCosmeticImage(id);
+
       try {
         const image = await loadImage(imgPath);
         ctx.drawImage(image, x, y, 160, 160);
-      } catch {}
+      } catch (err) {
+        console.error(`Failed loading exclusive image for ${id}:`, err);
+      }
+
       x += 180;
     }
   }
