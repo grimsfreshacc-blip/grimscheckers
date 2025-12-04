@@ -1,53 +1,30 @@
+import {
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} from "discord.js";
 import axios from "axios";
-import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 
-export default {
-  data: new SlashCommandBuilder()
-    .setName("login")
-    .setDescription("Login to Epic Games to link your Fortnite account."),
+export const data = new SlashCommandBuilder()
+  .setName("login")
+  .setDescription("Login to your Fortnite account to link your locker.");
 
-  async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+export async function execute(interaction) {
+  const loginUrl = `${process.env.SERVER_URL}/auth/start`;
 
-    try {
-      // Step 1 — Request a new device auth session
-      const createRes = await axios.post(
-        `${process.env.SERVER_URL}/auth/create`,
-        { code: "REQUEST-DIRECT-AUTH-CODE-IN-FRONTEND" }
-      );
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel("Login with Epic Games")
+      .setStyle(ButtonStyle.Link)
+      .setURL(
+        `https://www.epicgames.com/id/authorize?client_id=${process.env.EPIC_CLIENT_ID}&response_type=code&redirect_uri=${process.env.EPIC_REDIRECT_URI}`
+      )
+  );
 
-      const device = createRes.data.deviceAuth;
-
-      // This is where the user MUST open the Epic login page:
-      const verificationUrl = device.verification_uri_complete;
-
-      const embed = new EmbedBuilder()
-        .setTitle("🔐 Epic Games Login")
-        .setDescription(
-          "Click the button below to log in to your Epic Games account.\n\n" +
-          "This will authorize the bot to access your **locker cosmetics** only.\n\n"
-        )
-        .setColor("#5865F2")
-        .addFields(
-          {
-            name: "Login Link",
-            value: `[Click to Login](${verificationUrl})`
-          },
-          {
-            name: "Device Code",
-            value: `\`${device.user_code}\``
-          }
-        )
-        .setFooter({ text: "Once you confirm, use /locker" });
-
-      await interaction.editReply({ embeds: [embed] });
-
-    } catch (err) {
-      console.error(err.response?.data || err);
-      return interaction.editReply({
-        content: "❌ Login failed. Try again.",
-        ephemeral: true
-      });
-    }
-  }
-};
+  await interaction.reply({
+    content: "Click the button below to login to Epic Games:",
+    components: [row],
+    ephemeral: true
+  });
+}
