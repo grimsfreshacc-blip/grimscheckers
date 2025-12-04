@@ -10,25 +10,23 @@ async function loadCosmetics() {
       const raw = fs.readFileSync(CACHE_FILE, "utf8");
       if (raw) return JSON.parse(raw);
     }
-  } catch (e) { /* ignore and refetch */ }
+  } catch (e) {}
 
   try {
     const res = await axios.get("https://fortnite-api.com/v2/cosmetics/br");
     const lookup = {};
     if (res.data && res.data.data) {
       for (const entry of res.data.data) {
-        if (entry.id) {
-          lookup[entry.id.toLowerCase()] = {
-            name: entry.name,
-            rarity: entry.rarity?.value || null,
-            icon: entry.images?.icon || entry.images?.featured || null,
-            type: entry.type?.value || null,
-            backend: entry.backendValue ? entry.backendValue.toLowerCase() : null
-          };
-        }
-        if (entry.backendValue) {
-          lookup[entry.backendValue.toLowerCase()] = lookup[entry.id.toLowerCase()];
-        }
+        if (!entry.id) continue;
+        const idKey = entry.id.toLowerCase();
+        lookup[idKey] = {
+          name: entry.name,
+          rarity: entry.rarity?.value || null,
+          icon: entry.images?.icon || entry.images?.featured || null,
+          type: entry.type?.value || null,
+          backend: entry.backendValue ? entry.backendValue.toLowerCase() : null
+        };
+        if (entry.backendValue) lookup[entry.backendValue.toLowerCase()] = lookup[idKey];
       }
     }
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
@@ -40,16 +38,4 @@ async function loadCosmetics() {
   }
 }
 
-function resolve(key, lookup) {
-  if (!key) return null;
-  const k = key.toLowerCase();
-  if (lookup[k]) return lookup[k];
-  // try partial matches
-  for (const lk in lookup) {
-    if (lk.includes(k) || k.includes(lk)) return lookup[lk];
-  }
-  // fallback
-  return { name: key.replace(/[:_.]/g, " "), icon: null, rarity: null };
-}
-
-module.exports = { loadCosmetics, resolve };
+module.exports = { loadCosmetics };
