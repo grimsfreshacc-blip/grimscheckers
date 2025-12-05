@@ -1,24 +1,34 @@
 import express from "express";
 import cors from "cors";
+import multer from "multer";
 import { parseLocker } from "./parseLocker.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 
-app.post("/upload-locker", (req, res) => {
-    const locker = req.body;
+const upload = multer({ storage: multer.memoryStorage() });
 
-    if (!locker || !locker.items) {
-        return res.status(400).json({ error: "Invalid locker file" });
+// Upload locker.json
+app.post("/upload", upload.single("locker"), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        const json = JSON.parse(req.file.buffer.toString());
+        const parsed = await parseLocker(json);
+
+        res.json(parsed);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Failed to parse locker" });
     }
-
-    const parsed = parseLocker(locker);
-    res.json(parsed);
 });
 
-app.get("/", (req, res) => {
-    res.send("Safe Skinchecker Backend Running");
-});
+// Public HTML
+app.use(express.static("public"));
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("SERVER READY on port " + PORT));
