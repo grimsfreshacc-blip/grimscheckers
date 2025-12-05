@@ -1,7 +1,8 @@
-export function getImage(cosmetic) {
-    return (
-        cosmetic?.images?.icon ||
-        cosmetic?.images?.featured ||
-        "https://via.placeholder.com/256?text=No+Image"
-    );
+export async function getCosmeticImage(templateId) {
+    const shortId = templateId.split(":")[1];
+
+    return {
+        id: shortId,
+        icon: `https://fortnite-api.com/images/cosmetics/br/${shortId}/icon.png`
+    };
 }
