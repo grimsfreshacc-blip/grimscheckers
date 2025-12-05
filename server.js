@@ -1,74 +1,71 @@
 import express from "express";
+import axios from "axios";
 import cors from "cors";
-import dotenv from "dotenv";
-import { exchangeCode, getLocker } from "./src/epic.js";
-import { renderLockerCard } from "./src/renderer.js";
 
-dotenv.config();
+import { startDeviceAuth, pollDeviceAuth, getLockerData } from "./src/epic.js";
+
 const app = express();
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// =========================
-// LOGIN REDIRECT FROM DISCORD (/login)
-// =========================
-app.get("/auth/login", (req, res) => {
-  const userId = req.query.user;
-  if (!userId) return res.send("Missing user ID");
+// in-memory token storage (no database)
+const sessions = {};
 
-  const redirectUrl =
-    `https://www.epicgames.com/id/login?redirectUrl=${process.env.API_URL}/auth/callback?user=${userId}`;
-
-  res.redirect(redirectUrl);
-});
-
-// =========================
-// EPIC CALLBACK
-// =========================
-app.get("/auth/callback", async (req, res) => {
-  const code = req.query.code;
-  const userId = req.query.user;
-
-  if (!code || !userId)
-    return res.send("Missing login information.");
-
+app.post("/login", async (req, res) => {
   try {
-    const accessToken = await exchangeCode(code);
+    const userId = req.body.userId;
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    // DO NOT SAVE ANYTHING — temporary only
-    global.tempTokens = global.tempTokens || {};
-    global.tempTokens[userId] = accessToken;
+    const auth = await startDeviceAuth();
+    sessions[userId] = { deviceCode: auth.device_code };
 
-    res.send("Login successful. Return to Discord and run /locker");
+    res.json({
+      loginUrl: `https://www.epicgames.com/activate?userCode=${auth.user_code}`,
+      userCode: auth.user_code,
+      expiresIn: auth.expires_in
+    });
+
   } catch (err) {
-    console.log(err);
-    res.send("Login failed.");
+    res.status(500).json({ error: "Login failed" });
   }
 });
 
-// =========================
-// LOCKER FETCH API
-// =========================
-app.get("/api/locker", async (req, res) => {
-  const userId = req.query.user;
-  if (!userId) return res.json({ error: "No user ID" });
-
-  const token = global.tempTokens?.[userId];
-  if (!token) return res.json({ error: "NOT_LOGGED_IN" });
-
+app.post("/poll", async (req, res) => {
   try {
-    const locker = await getLocker(token);
+    const userId = req.body.userId;
+    if (!sessions[userId]) return res.json({ status: "no_session" });
 
-    // Create PNG buffer
-    const imageBuffer = await renderLockerCard(locker);
+    const token = await pollDeviceAuth(sessions[userId].deviceCode);
 
-    res.set("Content-Type", "image/png");
-    res.send(imageBuffer);
+    if (token === "authorization_pending") {
+      return res.json({ status: "pending" });
+    }
+
+    sessions[userId].accessToken = token;
+    return res.json({ status: "success" });
+
   } catch (err) {
-    console.log(err);
-    res.json({ error: "LOCKER_ERROR" });
+    res.json({ status: "error" });
   }
 });
 
-// START SERVER
-app.listen(3000, () => console.log("API online"));
+app.post("/locker", async (req, res) => {
+  try {
+    const userId = req.body.userId;
+    const session = sessions[userId];
+
+    if (!session || !session.accessToken)
+      return res.status(400).json({ error: "Not logged in" });
+
+    const locker = await getLockerData(session.accessToken);
+
+    res.json(locker);
+
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch locker" });
+  }
+});
+
+app.listen(3000, () => {
+  console.log("Backend running on port 3000");
+});
