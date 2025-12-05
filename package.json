@@ -9,6 +9,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.57",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "discord.js": "^14.13.0",
